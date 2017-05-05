@@ -6,23 +6,38 @@
 -- @see https://github.com/x25/luajwt
 
 local json = require "cjson"
-local base64 = require "base64"
-local crypto = require "crypto"
 local utils = require "kong.tools.utils"
+local crypto = require "crypto"
+local asn_sequence = require "kong.plugins.jwt.asn_sequence"
 
 local error = error
 local type = type
 local pcall = pcall
 local ngx_time = ngx.time
 local string_rep = string.rep
+local string_sub = string.sub
+local table_concat = table.concat
 local setmetatable = setmetatable
+local encode_base64 = ngx.encode_base64
+local decode_base64 = ngx.decode_base64
 
 --- Supported algorithms for signing tokens.
 local alg_sign = {
   ["HS256"] = function(data, key) return crypto.hmac.digest("sha256", data, key, true) end,
   --["HS384"] = function(data, key) return crypto.hmac.digest("sha384", data, key, true) end,
   --["HS512"] = function(data, key) return crypto.hmac.digest("sha512", data, key, true) end
-  ["RS256"] = function(data, key) return crypto.sign('sha256', data, crypto.pkey.from_pem(key, true)) end
+  ["RS256"] = function(data, key) return crypto.sign('sha256', data, crypto.pkey.from_pem(key, true)) end,
+  ["ES256"] = function(data, key)
+    local pkeyPrivate = crypto.pkey.from_pem(key, true)
+    local signature = crypto.sign('sha256', data, pkeyPrivate)
+
+    local derSequence = asn_sequence.parse_simple_sequence(signature)
+    local r = asn_sequence.unsign_integer(derSequence[1], 32)
+    local s = asn_sequence.unsign_integer(derSequence[2], 32)
+    assert(#r == 32)
+    assert(#s == 32)
+    return r .. s
+  end
 }
 
 --- Supported algorithms for verifying tokens.
@@ -31,7 +46,17 @@ local alg_verify = {
   --["HS384"] = function(data, signature, key) return signature == alg_sign["HS384"](data, key) end,
   --["HS512"] = function(data, signature, key) return signature == alg_sign["HS512"](data, key) end
   ["RS256"] = function(data, signature, key)
-    return crypto.verify('sha256', data, signature, crypto.pkey.from_pem(key))
+    local pkey = assert(crypto.pkey.from_pem(key), "Consumer Public Key is Invalid")
+    return crypto.verify('sha256', data, signature, pkey)
+  end,
+  ["ES256"] = function(data, signature, key)
+    local pkey = assert(crypto.pkey.from_pem(key), "Consumer Public Key is Invalid")
+    assert(#signature == 64, "Signature must be 64 bytes.")
+    local asn = {}
+    asn[1] = asn_sequence.resign_integer(string_sub(signature, 1, 32))
+    asn[2] = asn_sequence.resign_integer(string_sub(signature, 33, 64))
+    local signatureAsn = asn_sequence.create_simple_sequence(asn)
+    return crypto.verify('sha256', data, signatureAsn, pkey)
   end
 }
 
@@ -39,7 +64,7 @@ local alg_verify = {
 -- @param input String to base64 encode
 -- @return Base64 encoded string
 local function b64_encode(input)
-  local result = base64.encode(input)
+  local result = encode_base64(input)
   result = result:gsub("+", "-"):gsub("/", "_"):gsub("=", "")
   return result
 end
@@ -48,15 +73,15 @@ end
 -- @param input String to base64 decode
 -- @return Base64 decoded string
 local function b64_decode(input)
-  local reminder = #input % 4
+  local remainder = #input % 4
 
-  if reminder > 0 then
-    local padlen = 4 - reminder
+  if remainder > 0 then
+    local padlen = 4 - remainder
     input = input..string_rep('=', padlen)
   end
 
   input = input:gsub("-", "+"):gsub("_", "/")
-  return base64.decode(input)
+  return decode_base64(input)
 end
 
 --- Tokenize a string by delimiter
@@ -96,15 +121,23 @@ local function decode_token(token)
            b64_decode(signature_64)
   end)
   if not ok then
-    return nil, "Invalid JSON"
+    return nil, "invalid JSON"
   end
 
   if header.typ and header.typ:upper() ~= "JWT" then
-    return nil, "Invalid typ"
+    return nil, "invalid typ"
   end
 
   if not header.alg or type(header.alg) ~= "string" or not alg_verify[header.alg] then
-    return nil, "Invalid alg"
+    return nil, "invalid alg"
+  end
+
+  if not claims then
+    return nil, "invalid claims"
+  end
+
+  if not signature then
+    return nil, "invalid signature"
   end
 
   return {
@@ -136,10 +169,10 @@ local function encode_token(data, key, alg, header)
     b64_encode(json.encode(data))
   }
 
-  local signing_input = table.concat(segments, ".")
+  local signing_input = table_concat(segments, ".")
   local signature = alg_sign[alg](signing_input, key)
   segments[#segments+1] = b64_encode(signature)
-  return table.concat(segments, ".")
+  return table_concat(segments, ".")
 end
 
 --[[
@@ -158,7 +191,7 @@ _M.__index = _M
 -- @return JWT parser
 -- @return error if any
 function _M:new(token)
-  if type(token) ~= "string" then error("JWT must be a string", 2) end
+  if type(token) ~= "string" then error("Token must be a string, got "..tostring(token), 2) end
 
   local token, err = decode_token(token)
   if err then

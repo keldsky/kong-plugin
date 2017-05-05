@@ -6,6 +6,7 @@ local jwt_decoder = require "kong.plugins.jwt.jwt_parser"
 local string_format = string.format
 local ngx_re_gmatch = ngx.re.gmatch
 
+local ngx_set_header = ngx.req.set_header
 
 local JwtHandler = BasePlugin:extend()
 
@@ -18,6 +19,7 @@ local JWT_USER_ID          = "X-Jwt-User-Id"
 local JWT_ACCOUNT_ID       = "X-Jwt-Account-Id"
 local JWT_RATELIMIT_MONTH  = "X-Jwt-Ratelimit-Month"
 local JWT_RATELIMIT_MINUTE = "X-Jwt-Ratelimit-Minute"
+local ANONYMOUS            = "X-Anonymous-Consumer";
 
 local function is_blank(str)
     return str == nil or str == ''
@@ -27,7 +29,7 @@ end
 -- Checks for the JWT in URI parameters, then in the `Authorization` header.
 -- @param request ngx request object
 -- @param conf Plugin configuration
--- @return token JWT token contained in request or nil
+-- @return token JWT token contained in request (can be a table) or nil
 -- @return err
 local function retrieve_token(request, conf)
   local uri_parameters = request.get_uri_args()
@@ -57,52 +59,87 @@ local function retrieve_token(request, conf)
 end
 
 function JwtHandler:new()
-  JwtHandler.super.new(self, "jwt")
+  JwtHandler.super.new(self, "sm-jwt")
 end
 
-function JwtHandler:access(conf)
-  JwtHandler.super.access(self)
+local function load_credential(jwt_secret_key)
+  local rows, err = singletons.dao.jwt_secrets:find_all {key = jwt_secret_key}
+  if err then
+    return nil, err
+  end
+  return rows[1]
+end
+
+local function load_consumer(consumer_id, anonymous)
+  local result, err = singletons.dao.consumers:find { id = consumer_id }
+  if not result then
+    if anonymous and not err then
+      err = 'anonymous consumer "'..consumer_id..'" not found'
+    end
+    return nil, err
+  end
+  return result
+end
+
+local function set_consumer(consumer, jwt_secret)
+  ngx_set_header(CONSUMER_ID, consumer.id)
+  ngx_set_header(CONSUMER_CUSTOM_ID, consumer.custom_id)
+  ngx_set_header(CONSUMER_USERNAME, consumer.username)
+  ngx.ctx.authenticated_consumer = consumer
+  if jwt_secret then
+    ngx.ctx.authenticated_credential = jwt_secret
+    ngx_set_header(ANONYMOUS, nil) -- in case of auth plugins concatenation
+  else
+    ngx_set_header(ANONYMOUS, true)
+  end
+end
+
+local function do_authentication(conf)
   local token, err = retrieve_token(ngx.req, conf)
   if err then
     return responses.send_HTTP_INTERNAL_SERVER_ERROR(err)
   end
 
-  if not token then
-    return responses.send_HTTP_UNAUTHORIZED()
+  local ttype = type(token)
+  if ttype ~= "string" then
+    if ttype == "nil" then
+      return false, {status = 401}
+    elseif ttype == "table" then
+      return false, {status = 401, message = "Multiple tokens provided"}
+    else
+      return false, {status = 401, message = "Unrecognizable token"}
+    end
   end
-
+  
   -- Decode token to find out who the consumer is
   local jwt, err = jwt_decoder:new(token)
   if err then
-    return responses.send_HTTP_INTERNAL_SERVER_ERROR()
+    return false, {status = 401, message = "Bad token; "..tostring(err)}
   end
 
   local claims = jwt.claims
-
+ 
   local jwt_secret_key = claims[conf.key_claim_name]
   if not jwt_secret_key then
-    return responses.send_HTTP_UNAUTHORIZED("No mandatory '"..conf.key_claim_name.."' in claims")
+    return false, {status = 401, message = "No mandatory '"..conf.key_claim_name.."' in claims"}
   end
 
   -- Retrieve the secret
-  local jwt_secret = cache.get_or_set(cache.jwtauth_credential_key(jwt_secret_key), function()
-    local rows, err = singletons.dao.jwt_secrets:find_all {key = jwt_secret_key}
-    if err then
-      return responses.send_HTTP_INTERNAL_SERVER_ERROR()
-    elseif #rows > 0 then
-      return rows[1]
-    end
-  end)
+  local jwt_secret, err = cache.get_or_set(cache.jwtauth_credential_key(jwt_secret_key),
+                                      nil, load_credential, jwt_secret_key)
+  if err then
+    return responses.send_HTTP_INTERNAL_SERVER_ERROR(err)
+  end
 
   if not jwt_secret then
-    return responses.send_HTTP_FORBIDDEN("No credentials found for given '"..conf.key_claim_name.."'")
+    return false, {status = 403, message = "No credentials found for given '"..conf.key_claim_name.."'"}
   end
 
   local algorithm = jwt_secret.algorithm or "HS256"
 
   -- Verify "alg"
   if jwt.header.alg ~= algorithm then
-    return responses.send_HTTP_FORBIDDEN("Invalid algorithm")
+    return false, {status = 403, message = "Invalid algorithm"}
   end
 
   local jwt_secret_value = algorithm == "HS256" and jwt_secret.secret or jwt_secret.rsa_public_key
@@ -110,37 +147,34 @@ function JwtHandler:access(conf)
     jwt_secret_value = jwt:b64_decode(jwt_secret_value)
   end
 
+  if not jwt_secret_value then
+    return false, {status = 403, message = "Invalid key/secret"}
+  end
+  
   -- Now verify the JWT signature
   if not jwt:verify_signature(jwt_secret_value) then
-    return responses.send_HTTP_FORBIDDEN("Invalid signature")
+    return false, {status = 403, message = "Invalid signature"}
   end
 
   -- Verify the JWT registered claims
   local ok_claims, errors = jwt:verify_registered_claims(conf.claims_to_verify)
   if not ok_claims then
-    return responses.send_HTTP_FORBIDDEN(errors)
+    return false, {status = 401, message = errors}
   end
 
   -- Retrieve the consumer
-  local consumer = cache.get_or_set(cache.consumer_key(jwt_secret_key), function()
-    local consumer, err = singletons.dao.consumers:find {id = jwt_secret.consumer_id}
-    if err then
-      return responses.send_HTTP_INTERNAL_SERVER_ERROR(err)
-    end
-    return consumer
-  end)
+  local consumer, err = cache.get_or_set(cache.consumer_key(jwt_secret_key),
+                                    nil, load_consumer, jwt_secret.consumer_id)
+  if err then
+    return responses.send_HTTP_INTERNAL_SERVER_ERROR(err)
+  end
 
   -- However this should not happen
   if not consumer then
-    return responses.send_HTTP_FORBIDDEN(string_format("Could not find consumer for '%s=%s'", conf.key_claim_name, jwt_secret_key))
+    return false, {status = 403, message = string_format("Could not find consumer for '%s=%s'", conf.key_claim_name, jwt_secret_key)}
   end
 
-  ngx.req.set_header(CONSUMER_ID, consumer.id)
-  ngx.req.set_header(CONSUMER_CUSTOM_ID, consumer.custom_id)
-  ngx.req.set_header(CONSUMER_USERNAME, consumer.username)
-  ngx.ctx.authenticated_credential = jwt_secret
-
-  -- Set values used by other sm plugins
+-- Set values used by other sm plugins
 
   -- user_id
   if not is_blank(jwt.claims["user_id"]) then
@@ -164,6 +198,37 @@ function JwtHandler:access(conf)
         ngx.req.set_header(JWT_RATELIMIT_MINUTE, ratelimit["minute"])
       end
   end
+  
+  set_consumer(consumer, jwt_secret)
+
+  return true
 end
+
+
+function JwtHandler:access(conf)
+  JwtHandler.super.access(self)
+  
+  if ngx.ctx.authenticated_credential and conf.anonymous ~= "" then
+    -- we're already authenticated, and we're configured for using anonymous, 
+    -- hence we're in a logical OR between auth methods and we're already done.
+    return
+  end
+
+  local ok, err = do_authentication(conf)
+  if not ok then
+    if conf.anonymous ~= "" then
+      -- get anonymous user
+      local consumer, err = cache.get_or_set(cache.consumer_key(conf.anonymous),
+                       nil, load_consumer, conf.anonymous, true)
+      if err then
+        return responses.send_HTTP_INTERNAL_SERVER_ERROR(err)
+      end
+      set_consumer(consumer, nil)
+    else
+      return responses.send(err.status, err.message)
+    end
+  end
+end
+
 
 return JwtHandler
