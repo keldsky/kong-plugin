@@ -3,6 +3,8 @@ Kong is an application that sits in front of the simply measured micro service e
 
 Kong allows for custom plugins to be added and at Simply Measured we have written a few and modified existing plugins for our needs. This repo contains the plugins that have been modified from the original. For more information on native kong plugins (several of which are used) the docs can be found https://getkong.org/plugins/.
 
+Plugins are built/deployed from https://ci.simplymeasured.com/job/kong-plugin-packaging/
+
 
 ## Customized Plugins
 
