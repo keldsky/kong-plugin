@@ -5,6 +5,19 @@ Kong allows for custom plugins to be added and at Simply Measured we have writte
 
 Plugins are built/deployed from https://ci.simplymeasured.com/job/kong-plugin-packaging/
 
+## Running
+
+1. Clone the [Kong Vagrant repo](https://github.com/Mashape/kong-vagrant).
+2. Clone this repo and [Kong](https://github.com/Mashape/kong) *parallel* to Kong Vagrant.
+3. Start up Vagrant.
+4. Within the Vagrant box, `cd` into `/kong` and run `sudo luarocks install uuid; cp kong.conf.default kong.conf`.
+5. Add the following lines to kong.conf:
+```
+custom_plugins = maintenance,sm-activity-id,sm-datadog,sm-syslog,sm-jwt,cors
+lua_package_path = /kong-plugin/?.lua;;
+```
+6. Pass this config to Kong when you start up like so:  `sudo bin/kong start -c kong.conf`
+
 
 ## Customized Plugins
 
