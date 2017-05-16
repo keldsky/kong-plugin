@@ -1,36 +1,26 @@
 -- Copyright (C) Mashape, Inc.
 
-local BasePlugin = require "kong.plugins.base_plugin"
-local constants = require "kong.constants"
+local policies = require "kong.plugins.sm-rate-limiting.policies.init"
 local timestamp = require "kong.tools.timestamp"
 local responses = require "kong.tools.responses"
+local BasePlugin = require "kong.plugins.base_plugin"
 local jwt_decoder = require "kong.plugins.jwt.jwt_parser"
-local singletons = require "kong.singletons"
 
 local req_get_headers = ngx.req.get_headers
+local ngx_log = ngx.log
+local pairs = pairs
+local tostring = tostring
+local ngx_timer_at = ngx.timer.at
+
+local RATELIMIT_LIMIT = "X-RateLimit-Limit"
+local RATELIMIT_REMAINING = "X-RateLimit-Remaining"
+
 local RateLimitingHandler = BasePlugin:extend()
 
 RateLimitingHandler.PRIORITY = 900
 
-local function increment(api_id, identifier, current_timestamp, value)
-  -- Increment metrics for all periods if the request goes through
-  local _, stmt_err = singletons.dao.ratelimiting_metrics:increment(api_id, identifier, current_timestamp, value)
-  if stmt_err then
-    return false, stmt_err
-  end
-  return true
-end
-
-local function increment_async(premature, api_id, identifier, current_timestamp, value)
-  if premature then return end
-  
-  local _, stmt_err = singletons.dao.ratelimiting_metrics:increment(api_id, identifier, current_timestamp, value)
-  if stmt_err then
-    ngx.log(ngx.ERR, "failed to increment: ", tostring(stmt_err))
-  end
-end
-
-local function get_user_id()
+-- the user_id found in the user's JWT is the identifier we use for ratelimiting
+local function get_identifier()
     local headers = req_get_headers()
     local authHeader = headers["Authorization"]
 
@@ -46,18 +36,17 @@ local function get_user_id()
     return jwt.claims["user_id"]:gsub("auth0|", "")
 end
 
-local function get_usage(api_id, identifier, current_timestamp, limits)
+local function get_usage(conf, api_id, identifier, current_timestamp, limits)
   local usage = {}
   local stop
 
   for name, limit in pairs(limits) do
-    local current_metric, err = singletons.dao.ratelimiting_metrics:find(api_id, identifier, current_timestamp, name)
+    local current_usage, err = policies[conf.policy].usage(conf, api_id, identifier, current_timestamp, name)
     if err then
       return nil, nil, err
     end
 
     -- What is the current usage for the configured limit name?
-    local current_usage = current_metric and current_metric.value or 0
     local remaining = limit - current_usage
 
     -- Recording usage
@@ -83,17 +72,21 @@ function RateLimitingHandler:access(conf)
   local current_timestamp = timestamp.get_utc()
 
   -- Consumer is identified by ip address or authenticated_credential id
-  local identifier = get_user_id()
+  local identifier = get_identifier()
   local api_id = ngx.ctx.api.id
-  local is_async = conf.async
-  local is_continue_on_error = conf.continue_on_error
+  local policy = conf.policy
+  local fault_tolerant = conf.fault_tolerant
 
   -- Load current metric for configured period
-  conf.async = nil
-  conf.continue_on_error = nil
-  local usage, stop, err = get_usage(api_id, identifier, current_timestamp, conf)
+  local usage, stop, err = get_usage(conf, api_id, identifier, current_timestamp, {
+    second = conf.second,
+    minute = conf.minute,
+    hour = conf.hour,
+    day = conf.day,
+    month = conf.month,
+    year = conf.year})
   if err then
-    if is_continue_on_error then
+    if fault_tolerant then
       ngx.log(ngx.ERR, "failed to get usage: ", tostring(err))
     else
       return responses.send_HTTP_INTERNAL_SERVER_ERROR(err)
@@ -103,8 +96,8 @@ function RateLimitingHandler:access(conf)
   if usage then
     -- Adding headers
     for k, v in pairs(usage) do
-      ngx.header[constants.HEADERS.RATELIMIT_LIMIT.."-"..k] = v.limit
-      ngx.header[constants.HEADERS.RATELIMIT_REMAINING.."-"..k] = math.max(0, (stop == nil or stop == k) and v.remaining - 1 or v.remaining) -- -increment_value for this current request
+      ngx.header[RATELIMIT_LIMIT.."-"..k] = v.limit
+      ngx.header[RATELIMIT_REMAINING.."-"..k] = math.max(0, (stop == nil or stop == k) and v.remaining - 1 or v.remaining) -- -increment_value for this current request
     end
 
     -- If limit is exceeded, terminate the request
@@ -112,22 +105,16 @@ function RateLimitingHandler:access(conf)
       return responses.send(429, "API rate limit exceeded")
     end
   end
-  
+
+  local incr = function(premature, conf, api_id, identifier, current_timestamp, value)
+    if premature then return end
+    policies[policy].increment(conf, api_id, identifier, current_timestamp, value)
+  end
+
   -- Increment metrics for all periods if the request goes through
-  if is_async then
-    local ok, err = ngx.timer.at(0, increment_async, api_id, identifier, current_timestamp, 1)
-    if not ok then
-      ngx.log(ngx.ERR, "failed to create timer: ", err)
-    end
-  else
-    local _, err = increment(api_id, identifier, current_timestamp, 1)
-    if err then
-      if is_continue_on_error then
-        ngx.log(ngx.ERR, "failed to increment: ", tostring(err))
-      else
-        return responses.send_HTTP_INTERNAL_SERVER_ERROR(err)
-      end
-    end
+  local ok, err = ngx_timer_at(0, incr, conf, api_id, identifier, current_timestamp, 1)
+  if not ok then
+    ngx_log(ngx.ERR, "failed to create timer: ", err)
   end
 end
 
