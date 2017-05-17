@@ -36,11 +36,9 @@ return {
       local row, err = policy_cluster[db.name].find(db, identifier, current_timestamp, name)
 
       if err then
-        ngx_log(ngx.ERR, "row not found!!"..err)
+        ngx_log(ngx.ERR, "row not found"..err)
         return nil, err
       end
-
-      ngx_log(ngx.ERR, "row =="..tostring(row), " err =="..tostring(err))
 
       return row and row.value or 0
     end

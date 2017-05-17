@@ -12,8 +12,8 @@ local pairs = pairs
 local tostring = tostring
 local ngx_timer_at = ngx.timer.at
 
-local RATELIMIT_LIMIT = "X-RateLimit-Limit"
-local RATELIMIT_REMAINING = "X-RateLimit-Remaining"
+local RATELIMIT_LIMIT = "X-SM-User-RateLimit-Limit"
+local RATELIMIT_REMAINING = "X-SM-User-RateLimit-Remaining"
 
 local RateLimitingHandler = BasePlugin:extend()
 

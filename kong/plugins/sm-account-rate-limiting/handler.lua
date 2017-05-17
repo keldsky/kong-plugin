@@ -12,6 +12,9 @@ local pairs = pairs
 local tostring = tostring
 local ngx_timer_at = ngx.timer.at
 
+local RATELIMIT_LIMIT = "X-SM-Account-RateLimit-Limit"
+local RATELIMIT_REMAINING = "X-SM-Account-RateLimit-Remaining"
+
 local RateLimitingHandler = BasePlugin:extend()
 
 RateLimitingHandler.PRIORITY = 900
@@ -81,8 +84,6 @@ function RateLimitingHandler:new()
 end
 
 function RateLimitingHandler:access(conf)
-  ngx.log(ngx.NOTICE, "in sm account rate limiting access function")
-
     RateLimitingHandler.super.access(self)
     local current_timestamp = timestamp.get_utc()
 
@@ -108,8 +109,6 @@ function RateLimitingHandler:access(conf)
     -- We use the client_id/account_id found in the JWT as the "identifier" in the other rate limiting plugins
     local identifier = client_id .. account_id
 
-    ngx.log(ngx.ERR, "identifier: ", tostring(identifier))
-
     -- Load current metric for configured period
     -- local usage, stop, err = get_usage(client_id, account_id, current_timestamp, rate_limits)
     local usage, stop, err = get_usage(conf, identifier, current_timestamp, {
@@ -128,11 +127,11 @@ function RateLimitingHandler:access(conf)
     end
 
     if usage then
-        -- Adding headers
-        for k, v in pairs(usage) do
-            ngx.header["X-Account-Rate-Limit-"..k] = v.limit
-            ngx.header["X-Account-Rate-Limit-Remaining-"..k] = math.max(0, (stop == nil or stop == k) and v.remaining - 1 or v.remaining) -- -increment_value for this current request
-        end
+      -- Adding headers
+      for k, v in pairs(usage) do
+        ngx.header[RATELIMIT_LIMIT.."-"..k] = v.limit
+        ngx.header[RATELIMIT_REMAINING.."-"..k] = math.max(0, (stop == nil or stop == k) and v.remaining - 1 or v.remaining) -- -increment_value for this current request
+      end
 
         -- If limit is exceeded, terminate the request
         if stop then

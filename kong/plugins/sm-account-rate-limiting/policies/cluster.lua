@@ -9,7 +9,6 @@ local ERR = ngx.ERR
 return {
   ["postgres"] = {
     increment = function(db, identifier, current_timestamp, value)
-      ngx.log(ngx.ERR, "identifier: "..tostring(identifier).." current_timestamp: "..current_timestamp.." value "..value)
       local buf = {}
       local periods = timestamp.get_timestamps(current_timestamp)
 
@@ -20,7 +19,7 @@ return {
       end
 
       local query = concat(buf, ";")
-      ngx.log(ngx.ERR, "query: "..query);
+      ngx.log(ngx.NOTICE, "querying postgres for "..query)
 
       local res, err = db:query(query)
       if not res then return nil, err end
@@ -38,12 +37,10 @@ return {
               period = '%s'
       ]], identifier, periods[period]/1000, period)
 
-      ngx.log(ngx.ERR, "query: "..query);
+      ngx.log(ngx.NOTICE, "querying postgres for "..query)
 
       local response, err = db:query(query)
       if not response or err then return nil, err end
-
-      ngx.log(ngx.ERR, "response: "..tostring(response[0]))
 
       return response[1]
     end,
