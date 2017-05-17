@@ -16,6 +16,7 @@ sudo luarocks install uuid
 cp /kong/kong.conf.default /kong/kong.conf
 printf "custom_plugins = maintenance,sm-activity-id,sm-datadog,sm-syslog,sm-jwt,cors\nlua_package_path = /kong-plugin/?.lua;;\n" >> /kong/kong.conf
 ```
+5. `cd /kong; sudo make dev`
 6. When you start Kong, pass this config in like so:  `sudo kong start -c /kong/kong.conf`
 
 
