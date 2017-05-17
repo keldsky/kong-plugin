@@ -46,16 +46,17 @@ local function parse_claim(jwt, key)
     return value
 end
 
-local function get_usage(conf, api_id, identifier, current_timestamp, limits)
+local function get_usage(conf, identifier, current_timestamp, limits)
     local usage = {}
     local stop
 
     for name, limit in pairs(limits) do
-        local current_usage, err = policies[conf.policy].usage(conf, api_id, identifier, current_timestamp, name)
+        local current_usage, err = policies[conf.policy].usage(conf, identifier, current_timestamp, name)
         if err then
             return nil, nil, err
         end
 
+        ngx.log(ngx.NOTICE, " current_usage:  "..current_usage)
         -- What is the current usage for the configured limit name?
         local remaining = limit - current_usage
 
@@ -80,6 +81,8 @@ function RateLimitingHandler:new()
 end
 
 function RateLimitingHandler:access(conf)
+  ngx.log(ngx.NOTICE, "in sm account rate limiting access function")
+
     RateLimitingHandler.super.access(self)
     local current_timestamp = timestamp.get_utc()
 
@@ -95,7 +98,6 @@ function RateLimitingHandler:access(conf)
 
     local account_id = parse_claim(jwt, "account_id")
     local rate_limits = parse_claim(jwt, "ratelimit")
-    local api_id = ngx.ctx.api.id
     local policy = conf.policy
     local fault_tolerant = conf.fault_tolerant
 
@@ -106,9 +108,11 @@ function RateLimitingHandler:access(conf)
     -- We use the client_id/account_id found in the JWT as the "identifier" in the other rate limiting plugins
     local identifier = client_id .. account_id
 
+    ngx.log(ngx.ERR, "identifier: ", tostring(identifier))
+
     -- Load current metric for configured period
     -- local usage, stop, err = get_usage(client_id, account_id, current_timestamp, rate_limits)
-    local usage, stop, err = get_usage(conf, api_id, identifier, current_timestamp, {
+    local usage, stop, err = get_usage(conf, identifier, current_timestamp, {
       second = conf.second,
       minute = conf.minute,
       hour = conf.hour,
@@ -136,13 +140,13 @@ function RateLimitingHandler:access(conf)
         end
     end
 
-    local incr = function(premature, conf, api_id, identifier, current_timestamp, value)
+    local incr = function(premature, conf, identifier, current_timestamp, value)
       if premature then return end
-      policies[policy].increment(conf, api_id, identifier, current_timestamp, value)
+      policies[policy].increment(conf, identifier, current_timestamp, value)
     end
 
     -- Increment metrics for all periods if the request goes through
-    local ok, err = ngx_timer_at(0, incr, conf, api_id, identifier, current_timestamp, 1)
+    local ok, err = ngx_timer_at(0, incr, conf, identifier, current_timestamp, 1)
     if not ok then
       ngx_log(ngx.ERR, "failed to create timer: ", err)
     end
