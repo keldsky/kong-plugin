@@ -30,7 +30,7 @@ return {
 
         local _, err = cache.sh_incr(cache_key, value)
         if err then
-          ngx_log("[sm-rate-limiting] could not increment counter for period '"..period.."': "..tostring(err))
+          ngx_log("[sm-user-rate-limiting] could not increment counter for period '"..period.."': "..tostring(err))
           return nil, err
         end
       end

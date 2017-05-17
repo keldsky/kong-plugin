@@ -29,7 +29,7 @@ return {
 
       local q = fmt([[
         SELECT *, extract(epoch from period_date)*1000 AS period_date
-        FROM sm_ratelimiting_metrics
+        FROM sm_user_ratelimiting_metrics
         WHERE identifier = '%s' AND
               period_date = to_timestamp('%s') at time zone 'UTC' AND
               period = '%s'

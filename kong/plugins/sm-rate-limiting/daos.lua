@@ -1,3 +1,3 @@
 return {
-  tables = {"sm_ratelimiting_metrics"}
+  tables = {"sm_user_ratelimiting_metrics"}
 }

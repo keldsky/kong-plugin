@@ -1,6 +1,6 @@
 -- Copyright (C) Mashape, Inc.
 
-local policies = require "kong.plugins.sm-rate-limiting.policies.init"
+local policies = require "kong.plugins.sm-user-rate-limiting.policies.init"
 local timestamp = require "kong.tools.timestamp"
 local responses = require "kong.tools.responses"
 local BasePlugin = require "kong.plugins.base_plugin"
@@ -64,7 +64,7 @@ local function get_usage(conf, identifier, current_timestamp, limits)
 end
 
 function RateLimitingHandler:new()
-  RateLimitingHandler.super.new(self, "sm-rate-limiting")
+  RateLimitingHandler.super.new(self, "sm-user-rate-limiting")
 end
 
 function RateLimitingHandler:access(conf)
