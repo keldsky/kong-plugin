@@ -9,7 +9,6 @@ return {
     day = { type = "number" },
     month = { type = "number" },
     year = { type = "number" },
-    limit_by = { type = "string", enum = {"consumer", "credential", "ip"}, default = "consumer" },
     policy = { type = "string", enum = {"local", "cluster"}, default = "cluster" },
     fault_tolerant = { type = "boolean", default = true }
   },
