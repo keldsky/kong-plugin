@@ -14,7 +14,7 @@ return {
 
       for period, period_date in pairs(periods) do
         buf[#buf+1] = fmt([[
-          SELECT increment_rate_limits('%s', '%s', '%s', to_timestamp('%s')
+          SELECT increment_sm_user_rate_limits('%s', '%s', '%s', to_timestamp('%s')
           at time zone 'UTC', %d)
         ]], api_id, identifier, period, period_date/1000, value)
       end
