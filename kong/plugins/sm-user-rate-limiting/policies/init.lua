@@ -1,7 +1,7 @@
 local singletons = require "kong.singletons"
 local timestamp = require "kong.tools.timestamp"
 local cache = require "kong.tools.database_cache"
-local policy_cluster = require "kong.plugins.sm-rate-limiting.policies.cluster"
+local policy_cluster = require "kong.plugins.sm-user-rate-limiting.policies.cluster"
 local ngx_log = ngx.log
 
 local pairs = pairs

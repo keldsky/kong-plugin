@@ -49,12 +49,12 @@ local function parse_claim(jwt, key)
     return value
 end
 
-local function get_usage(conf, identifier, current_timestamp, limits)
+local function get_usage(conf, client_id, account_id, current_timestamp, limits)
     local usage = {}
     local stop
 
     for name, limit in pairs(limits) do
-        local current_usage, err = policies[conf.policy].usage(conf, identifier, current_timestamp, name)
+        local current_usage, err = policies[conf.policy].usage(conf, client_id, account_id, current_timestamp, name)
         if err then
             return nil, nil, err
         end
@@ -106,12 +106,8 @@ function RateLimitingHandler:access(conf)
         return responses.send_HTTP_BAD_REQUEST("Could not find any rate limits in JWT claims.  This plugin works only with monthly and minute account limits.")
     end
 
-    -- We use the client_id/account_id found in the JWT as the "identifier" in the other rate limiting plugins
-    local identifier = client_id .. account_id
-
     -- Load current metric for configured period
-    -- local usage, stop, err = get_usage(client_id, account_id, current_timestamp, rate_limits)
-    local usage, stop, err = get_usage(conf, identifier, current_timestamp, {
+    local usage, stop, err = get_usage(conf, client_id, account_id, current_timestamp, {
       second = conf.second,
       minute = conf.minute,
       hour = conf.hour,
@@ -139,13 +135,13 @@ function RateLimitingHandler:access(conf)
         end
     end
 
-    local incr = function(premature, conf, identifier, current_timestamp, value)
+    local incr = function(premature, conf, client_id, account_id, current_timestamp, value)
       if premature then return end
-      policies[policy].increment(conf, identifier, current_timestamp, value)
+      policies[policy].increment(conf, client_id, account_id, current_timestamp, value)
     end
 
     -- Increment metrics for all periods if the request goes through
-    local ok, err = ngx_timer_at(0, incr, conf, identifier, current_timestamp, 1)
+    local ok, err = ngx_timer_at(0, incr, conf, client_id, account_id, current_timestamp, 1)
     if not ok then
       ngx_log(ngx.ERR, "failed to create timer: ", err)
     end

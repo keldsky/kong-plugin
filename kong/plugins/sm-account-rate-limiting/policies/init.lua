@@ -7,8 +7,8 @@ local ngx_log = ngx.log
 local pairs = pairs
 local fmt = string.format
 
-local get_local_key = function(identifier, period_date, name)
-  return fmt("ratelimit:%s:%s:%s", identifier, period_date, name)
+local get_local_key = function(client_id, account_id, period_date, name)
+  return fmt("ratelimit:%s:%s:%s:%s", client_id, account_id, period_date, name)
 end
 
 local EXPIRATIONS = {
@@ -22,18 +22,18 @@ local EXPIRATIONS = {
 
 return {
   ["cluster"] = {
-    increment = function(conf, identifier, current_timestamp, value)
+    increment = function(conf, client_id, account_id, current_timestamp, value)
       local db = singletons.dao.db
-      local ok, err = policy_cluster[db.name].increment(db, identifier, current_timestamp, value)
+      local ok, err = policy_cluster[db.name].increment(db, client_id, account_id, current_timestamp, value)
       if not ok then
         ngx_log(ngx.ERR, "[sm-account-rate-limiting] cluster policy: could not increment ", db.name, " counter: ", err)
       end
 
       return ok, err
     end,
-    usage = function(conf, identifier, current_timestamp, name)
+    usage = function(conf, client_id, account_id, current_timestamp, name)
       local db = singletons.dao.db
-      local row, err = policy_cluster[db.name].find(db, identifier, current_timestamp, name)
+      local row, err = policy_cluster[db.name].find(db, client_id, account_id, current_timestamp, name)
 
       if err then
         ngx_log(ngx.ERR, "row not found"..err)

@@ -3,23 +3,24 @@ return {
     name = "2015-08-03-132400_init_sm_account_ratelimiting",
     up = [[
       CREATE TABLE IF NOT EXISTS sm_account_ratelimiting_metrics(
-        identifier text,
+        client_id text,
+        account_id text,
         period text,
         period_date timestamp without time zone,
         value integer,
-        PRIMARY KEY (identifier, period_date, period)
+        PRIMARY KEY (client_id, account_id, period_date, period)
       );
 
-      CREATE OR REPLACE FUNCTION increment_sm_account_rate_limits(i text, p text, p_date timestamp with time zone, v integer) RETURNS VOID AS $$
+      CREATE OR REPLACE FUNCTION increment_sm_account_rate_limits(c text, a text, p text, p_date timestamp with time zone, v integer) RETURNS VOID AS $$
       BEGIN
         LOOP
-          UPDATE sm_account_ratelimiting_metrics SET value = value + v WHERE identifier = i AND period = p AND period_date = p_date;
+          UPDATE sm_account_ratelimiting_metrics SET value = value + v WHERE client_id = c AND account_id = a AND period = p AND period_date = p_date;
           IF found then
             RETURN;
           END IF;
 
           BEGIN
-            INSERT INTO sm_account_ratelimiting_metrics(period, period_date, identifier, value) VALUES(p, p_date, i, v);
+            INSERT INTO sm_account_ratelimiting_metrics(period, period_date, client_id, account_id, value) VALUES(p, p_date, c, a, v);
             RETURN;
           EXCEPTION WHEN unique_violation THEN
 
