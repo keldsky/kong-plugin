@@ -9,7 +9,7 @@ return {
     month = { type = "number" },
     year = { type = "number" },
     client_id = { type = "string" },
-    policy = { type = "string", enum = {"local", "cluster"}, default = "cluster" },
+    policy = { type = "string", enum = {"cluster"}, default = "cluster" },  -- currently, the only accepted policy is "cluster", but we can add other back in if needed
     fault_tolerant = { type = "boolean", default = true }
   },
   self_check = function(schema, plugin_t, dao, is_update)
