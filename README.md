@@ -10,11 +10,13 @@ Plugins are built/deployed from https://ci.simplymeasured.com/job/kong-plugin-pa
 1. Clone the [Kong Vagrant repo](https://github.com/Mashape/kong-vagrant).
 2. Clone this repo and [Kong](https://github.com/Mashape/kong) *parallel* to Kong Vagrant.
 3. Start up Vagrant.
-4. Within the Vagrant box,
+4. Set up your Kong config file by adding in the custom plugins that you will be using and the path to them:
 ```bash 
 sudo luarocks install uuid
 cp /kong/kong.conf.default /kong/kong.conf
-printf "custom_plugins = maintenance,sm-activity-id,sm-datadog,sm-syslog,sm-jwt,cors\nlua_package_path = /kong-plugin/?.lua;;\n" >> /kong/kong.conf
+custom_plugins=$(ls /kong-plugin/kong/plugins/ | sed 's/ /\n/g' | tr '\n' ',')
+echo "custom_plugins = ${custom_plugins/%,/}" >> /kong/kong.conf
+echo "lua_package_path = /kong-plugin/?.lua;;" >> /kong/kong.conf
 ```
 5. `cd /kong; sudo make dev`
 6. When you start Kong, pass this config in like so:  `sudo kong start -c /kong/kong.conf`
