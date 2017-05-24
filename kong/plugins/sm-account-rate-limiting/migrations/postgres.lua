@@ -48,7 +48,6 @@ return {
 
         local _, err = dao.plugins:insert {
           name = "sm-account-rate-limiting",
-          consumer_id = rate_limiting.consumer_id,
           enabled = rate_limiting.enabled,
           config = {
             second = rate_limiting.config.second,
