@@ -7,6 +7,8 @@ Plugins are built/deployed from https://ci.simplymeasured.com/job/kong-plugin-pa
 
 ## Running
 
+----------------------
+
 1. Clone the [Kong Vagrant repo](https://github.com/Mashape/kong-vagrant).
 2. Clone this repo and [Kong](https://github.com/Mashape/kong) *parallel* to Kong Vagrant.
 3. Start up Vagrant.
@@ -20,6 +22,14 @@ echo "lua_package_path = /kong-plugin/?.lua;;" >> /kong/kong.conf
 ```
 5. `cd /kong; sudo make dev`
 6. When you start Kong, pass this config in like so:  `sudo kong start -c /kong/kong.conf`
+
+## Deploying
+
+----------------------
+
+1. Submit a PR with your changes on this repo.
+1. Once your PR has been approved and merged, a [Jenkins job](https://ci.simplymeasured.com/job/kong-plugin-packaging/) will package your changes and deploy them.
+1. Once your plugins have been deployed to each Kong node, you'll need to then add your plugin(s) to [Kong's cookbook](https://github.com/simplymeasured/chef/blob/master/cookbooks/sm-kong/attributes/config.rb#L23-L30) to be enabled. (IMPORTANT your plugins must already be deployed as described in step #2 before you enable your plugins).
 
 
 ## Customized Plugins
