@@ -28,8 +28,12 @@ echo "lua_package_path = /kong-plugin/?.lua;;" >> /kong/kong.conf
 ----------------------
 
 1. Submit a PR with your changes on this repo.
-1. Once your PR has been approved and merged, a [Jenkins job](https://ci.simplymeasured.com/job/kong-plugin-packaging/) will package your changes and deploy them.
-1. Once your plugins have been deployed to each Kong node, you'll need to then add your plugin(s) to [Kong's cookbook](https://github.com/simplymeasured/chef/blob/master/cookbooks/sm-kong/attributes/config.rb#L23-L30) to be enabled. (IMPORTANT your plugins must already be deployed as described in step #2 before you enable your plugins).
+1. Once your PR has been approved and merged, a [Jenkins job](https://ci.simplymeasured.com/job/kong-plugin-packaging/) will package your changes.
+1. Once your changes have been packaged, you'll need to deploy them to each node.  Currently this is a bit tedious and manual, but here is a script:
+```bash
+for n in $(curl https://consul.stg.pdx.intsm.net/v1/catalog/nodes | jq '.' | grep "kong" | grep -v "cassandra" | awk {'print $2'} | sed 's/\"//g' | sed 's/,//g'); do ssh $n.stg.pdx.intsm.net "sudo apt-get update; yes | sudo apt-get install kong-plugin"; done
+```
+1. Once your plugins have been deployed to each Kong node, you'll need to then add your plugin(s) to [Kong's cookbook](https://github.com/simplymeasured/chef/blob/master/cookbooks/sm-kong/attributes/config.rb#L23-L30) to be enabled. (IMPORTANT your plugins must already be deployed as described in step #3 before you enable your plugins).
 
 
 ## Customized Plugins
