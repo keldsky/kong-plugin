@@ -108,12 +108,12 @@ function RateLimitingHandler:access(conf)
 
     -- Load current metric for configured period
     local usage, stop, err = get_usage(conf, client_id, account_id, current_timestamp, {
-      second = conf.second,
-      minute = conf.minute,
-      hour = conf.hour,
-      day = conf.day,
-      month = conf.month,
-      year = conf.year})
+      second = rate_limits.second,
+      minute = rate_limits.minute,
+      hour = rate_limits.hour,
+      day = rate_limits.day,
+      month = rate_limits.month,
+      year = rate_limits.year})
     if err then
         if fault_tolerant then
             ngx.log(ngx.ERR, "failed to get usage: ", tostring(err))
