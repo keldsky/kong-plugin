@@ -57,7 +57,7 @@ return {
             month = sm_user_rate_limiting.config.month,
             year = sm_user_rate_limiting.config.year,
             limit_by = "consumer",
-            policy = "cluster",
+            policy = "local",
             fault_tolerant = sm_user_rate_limiting.config.continue_on_error
           }
         }
