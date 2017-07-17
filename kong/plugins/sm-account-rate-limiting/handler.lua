@@ -59,7 +59,7 @@ local function get_usage(conf, client_id, account_id, current_timestamp, limits)
             return nil, nil, err
         end
 
-        ngx.log(ngx.NOTICE, " current_usage:  "..current_usage)
+        ngx.log(ngx.DEBUG, " current_usage:  "..current_usage)
         -- What is the current usage for the configured limit name?
         local remaining = limit - current_usage
 
@@ -69,7 +69,7 @@ local function get_usage(conf, client_id, account_id, current_timestamp, limits)
             remaining = remaining
         }
 
-        ngx.log(ngx.NOTICE, "Limit:  "..limit.."  Remaining:  "..remaining)
+        ngx.log(ngx.DEBUG, "Limit:  "..limit.."  Remaining:  "..remaining)
 
         if remaining <= 0 then
             stop = name

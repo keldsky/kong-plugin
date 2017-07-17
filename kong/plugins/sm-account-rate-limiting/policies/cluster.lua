@@ -19,7 +19,7 @@ return {
       end
 
       local query = concat(buf, ";")
-      ngx.log(ngx.NOTICE, "querying postgres for "..query)
+      ngx.log(ngx.DEBUG, "querying postgres for "..query)
 
       local res, err = db:query(query)
       if not res then return nil, err end
@@ -38,7 +38,7 @@ return {
               period = '%s'
       ]], client_id, account_id, periods[period]/1000, period)
 
-      ngx.log(ngx.NOTICE, "querying postgres for "..query)
+      ngx.log(ngx.DEBUG, "querying postgres for "..query)
 
       local response, err = db:query(query)
       if not response or err then return nil, err end
