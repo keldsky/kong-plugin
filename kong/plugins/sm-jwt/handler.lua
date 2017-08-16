@@ -110,7 +110,7 @@ local function do_authentication(conf)
       return false, {status = 401, message = "Unrecognizable token"}
     end
   end
-  
+
   -- Decode token to find out who the consumer is
   local jwt, err = jwt_decoder:new(token)
   if err then
@@ -118,7 +118,7 @@ local function do_authentication(conf)
   end
 
   local claims = jwt.claims
- 
+
   local jwt_secret_key = claims[conf.key_claim_name]
   if not jwt_secret_key then
     return false, {status = 401, message = "No mandatory '"..conf.key_claim_name.."' in claims"}
@@ -143,14 +143,15 @@ local function do_authentication(conf)
   end
 
   local jwt_secret_value = algorithm == "HS256" and jwt_secret.secret or jwt_secret.rsa_public_key
-  if conf.secret_is_base64 then
+
+  if jwt_secret.secret_is_base64 then
     jwt_secret_value = jwt:b64_decode(jwt_secret_value)
   end
 
   if not jwt_secret_value then
     return false, {status = 403, message = "Invalid key/secret"}
   end
-  
+
   -- Now verify the JWT signature
   if not jwt:verify_signature(jwt_secret_value) then
     return false, {status = 403, message = "Invalid signature"}
@@ -198,7 +199,7 @@ local function do_authentication(conf)
         ngx.req.set_header(JWT_RATELIMIT_MINUTE, ratelimit["minute"])
       end
   end
-  
+
   set_consumer(consumer, jwt_secret)
 
   return true
@@ -207,9 +208,9 @@ end
 
 function JwtHandler:access(conf)
   JwtHandler.super.access(self)
-  
+
   if ngx.ctx.authenticated_credential and conf.anonymous ~= "" then
-    -- we're already authenticated, and we're configured for using anonymous, 
+    -- we're already authenticated, and we're configured for using anonymous,
     -- hence we're in a logical OR between auth methods and we're already done.
     return
   end
